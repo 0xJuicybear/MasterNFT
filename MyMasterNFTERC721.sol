@@ -246,10 +246,7 @@ library Address {
         if (success) {
             return returndata;
         } else {
-            // Look for revert reason and bubble it up if present
             if (returndata.length > 0) {
-                // The easiest way to bubble the revert reason is using memory via assembly
-
                 assembly {
                     let returndata_size := mload(returndata)
                     revert(add(32, returndata), returndata_size)
@@ -271,8 +268,6 @@ library EnumerableSet {
     function _add(Set storage set, bytes32 value) private returns (bool) {
         if (!_contains(set, value)) {
             set._values.push(value);
-            // The value is stored at length-1, but we add 1 to all indexes
-            // and use 0 as a sentinel value
             set._indexes[value] = set._values.length;
             return true;
         } else {
@@ -765,6 +760,10 @@ contract ERC721 is Context, ERC165, IERC721, IERC721Metadata, IERC721Enumerable 
 
 pragma solidity >=0.6.0 <= 0.8.17;
 
+interface iMMN{
+	function BXImageLink() external view returns (string memory);
+}
+
 contract MMNERC721 is Context, ERC721{
     using Address for address;
     using SafeMath for uint256;
@@ -778,21 +777,22 @@ contract MMNERC721 is Context, ERC721{
     uint256 public maxAddressNFT;
     uint256 public maxPerMint;
     uint256 public NFTmaxSupply;
+    uint256 public teamNFTminted;
+    uint256 public teamNFTmax = 200;
     bool public saleIsActive = true;
 
     mapping (address => uint256) public mintAmounts;
 
     event OwnershipTransferred(address indexed previousOwner, address indexed newOwner);
 
-    constructor(string memory name, string memory symbol, uint256 _maxSupply, uint256 _startTime, uint256 _endTime, uint256 _MMNID, uint _MaxPurchase, address _sOwnerAddr) ERC721(name, symbol) {
+    constructor(string memory name, string memory symbol, uint256 _maxSupply, uint256 _startTime, uint256 _endTime, uint256 _MaxPurchase, address _sOwnerAddr, address _sMMNAddr) ERC721(name, symbol) {
         NFTmaxSupply = _maxSupply;
         ActiveTime = _startTime;
 		EndTime = _endTime;
-		MMNERC721ID = _MMNID;
 		maxAddressNFT = _MaxPurchase;
 		maxPerMint = _MaxPurchase;
 		_owner = _sOwnerAddr;
-        _MMN = _msgSender();
+        _MMN = _sMMNAddr;
         emit OwnershipTransferred(address(0), _owner);
     }
 
@@ -835,53 +835,32 @@ contract MMNERC721 is Context, ERC721{
         saleIsActive = !saleIsActive;
     }
 
-    function setMintPrice(uint _MintPrice) public onlyOwner {
+    function setMintPrice(uint _MintPrice, uint _WhitelistPrice) public onlyOwner {
         MintPrice = _MintPrice;
+		WhitelistPrice = _WhitelistPrice;
     }
 
-    function sMintPrice() public view returns (uint256) {
-        return MintPrice;
+    function sMintPrice() public view returns (uint256[] memory) {
+		uint[] memory PriceAll = new uint[](2);
+		PriceAll[0] = MintPrice;
+		PriceAll[1] = WhitelistPrice;
+        return PriceAll;
+    }
+	
+    function setMaxteamNFT(uint256 _MaxteamNFT) public onlyOwner {
+        teamNFTmax = _MaxteamNFT;
     }
 
-    function setmaxNFTperAddress(uint _maxTokens) public onlyOwner {
+    function TeamNFT() public view returns (uint256[] memory) {
+		uint[] memory teamNFTAll = new uint[](2);
+		teamNFTAll[0] = teamNFTminted;
+		teamNFTAll[1] = teamNFTmax;
+        return teamNFTAll;
+    }
+
+    function setMaxAddress(uint256 _maxTokens, uint256 _maxperMint) public onlyOwner {
         maxAddressNFT = _maxTokens;
-    }
-
-    function setMaxPerMint(uint _maxperMint) public onlyOwner {
-        maxPerMint = _maxperMint;
-    }
-
-    //Mints NFTs
-    function mint(uint numberOfTokens) public payable {
-        require(saleIsActive && IsTimeActive(), "Sale must be active to mint NFT");
-        require(numberOfTokens <= maxPerMint, "Can only mint maxPerMint tokens at a time");
-        require(totalSupply().add(numberOfTokens) <= NFTmaxSupply, "Purchase would exceed max supply of NFTs");
-        require(mintAmounts[msg.sender].add(numberOfTokens) <= maxAddressNFT, "Purchase would exceed max supply of NFTs");
-        uint256 totalCost = MintPrice.mul(numberOfTokens);
-		require(totalCost <= msg.value, "Ether value sent is not correct");
-		
-		uint supply = totalSupply();
-        for(uint i = 0; i < numberOfTokens; i++) {
-            _safeMint(msg.sender, supply + i);
-			mintAmounts[msg.sender] += 1;
-        }
-		refundIfOver(totalCost);
-    }
-
-    //Mint team NFTs for free.
-    function teamNFT(uint numberOfTokens) public onlyOwner {
-        require(totalSupply().add(numberOfTokens) <= NFTmaxSupply, "Purchase would exceed max supply of NFTs");
-        uint supply = totalSupply();
-        for (uint i = 0; i < numberOfTokens; i++) {
-            _safeMint(msg.sender, supply + i);
-        }
-    }
-
-    function refundIfOver(uint256 price) private {
-        if (msg.value > price) {
-            (bool success, ) = (msg.sender).call{value: (msg.value - price)}("");
-            require(success, "Transfer failed.");
-        }
+		maxPerMint = _maxperMint;
     }
 
     function MintAmountsOf(address tokenAddr) public view returns (uint256) {
@@ -911,18 +890,141 @@ contract MMNERC721 is Context, ERC721{
 		EndTime = _newTimeEnd;
     }
 	
-    //Metadata setting
+    //----------------↓↓↓---Mints NFTs---↓↓↓-------------------------
+	
+    function mint(uint numberOfTokens) public payable {
+        require(saleIsActive && IsTimeActive(), "Sale must be active to mint NFT");
+		require(numberOfTokens > 0, "Quantity must more than 0");   
+        require(numberOfTokens <= maxPerMint, "Can only mint maxPerMint tokens at a time");
+        require(totalSupply().add(numberOfTokens) <= NFTmaxSupply, "Purchase would exceed max supply of NFTs");
+        require(mintAmounts[msg.sender].add(numberOfTokens) <= maxAddressNFT, "Purchase would exceed max supply of NFTs");
+        uint256 totalCost = MintPrice.mul(numberOfTokens);
+		require(totalCost <= msg.value, "Ether value sent is not correct");
+		
+		uint supply = totalSupply();
+        for(uint i = 0; i < numberOfTokens; i++) {
+            _safeMint(msg.sender, supply + i);
+			mintAmounts[msg.sender] += 1;
+        }
+		refundIfOver(totalCost);
+    }
+
+    //Mint team NFTs for free.
+    function teamNFT(uint numberOfTokens) public onlyOwner {
+        require(numberOfTokens > 0, "Quantity must more than 0");   
+        require(totalSupply().add(numberOfTokens) <= NFTmaxSupply, "Team mint would exceed max supply of NFTs");
+        require(teamNFTminted.add(numberOfTokens) <= teamNFTmax, "Team mint would exceed max team of NFTs");
+
+        uint supply = totalSupply();
+        for (uint i = 0; i < numberOfTokens; i++) {
+            _safeMint(msg.sender, supply + i);
+        }
+		teamNFTminted += numberOfTokens;
+    }
+
+    function refundIfOver(uint256 price) private {
+        if (msg.value > price) {
+            (bool success, ) = (msg.sender).call{value: (msg.value - price)}("");
+            require(success, "Transfer failed.");
+        }
+    }
+	
+    //----------------↑↑↑---Mints NFTs---↑↑↑-------------------------
+
+    //----------------↓↓↓---Whitelist---↓↓↓-------------------------
+	
+	uint256 public WhitelistPrice = 1e17;
+	uint256 public amountForWhitelist;
+	uint256 public MaxWhitelist;
+	uint256 public WhitelistActiveTime;
+	uint256 public WhitelistEndTime;
+	mapping(address => uint256) public allowlist;
+	
+    //Mints NFTs
+    function mintWhitelist(uint numberOfTokens) public payable {
+        require(saleIsActive && isWhitelistActive(), "Sale must be active to mint NFT");
+		require(numberOfTokens > 0, "Quantity must more than 0");
+		require(allowlist[msg.sender] >= numberOfTokens, "Not eligible for allowlist mint");
+        require(numberOfTokens <= maxPerMint, "Can only mint maxPerMint tokens at a time");
+        require(totalSupply().add(numberOfTokens) <= NFTmaxSupply, "Purchase would exceed max supply of NFTs");
+        require(mintAmounts[msg.sender].add(numberOfTokens) <= maxAddressNFT, "Purchase would exceed max supply of NFTs");
+        uint256 totalCost = WhitelistPrice.mul(numberOfTokens);
+		require(totalCost <= msg.value, "Ether value sent is not correct");
+		
+		uint supply = totalSupply();
+        for(uint i = 0; i < numberOfTokens; i++) {
+            _safeMint(msg.sender, supply + i);
+			mintAmounts[msg.sender] += 1;
+        }
+		allowlist[msg.sender] -= numberOfTokens;
+		refundIfOver(totalCost);
+    }
+
+	function setERC721ALL(uint _MaxteamNFT, uint _MintPrice, uint _WhitelistPrice, uint _sMaxWhitelist, uint timeActive, uint timeEnd) external onlyOwner {
+        require(_sMaxWhitelist >= amountForWhitelist,"Max number of whitelist does not match.");
+		teamNFTmax = _MaxteamNFT;
+        MintPrice = _MintPrice;
+		WhitelistPrice = _WhitelistPrice;
+		MaxWhitelist = _sMaxWhitelist;
+        WhitelistActiveTime = timeActive;
+        WhitelistEndTime = timeEnd;
+	}
+
+	function isWhitelistActive() public view returns (bool) {
+        bool _IsActive = false;
+        if(block.timestamp >= WhitelistActiveTime && block.timestamp <= WhitelistEndTime){
+			_IsActive = true;
+		}
+        return _IsActive;
+	}
+
+	function CheckMaxWhitelist() public view returns (uint256) {
+        return MaxWhitelist;
+	}
+
+	function transerWhitelist(address _addresses, uint numSlots) external {
+        require(allowlist[msg.sender] >= numSlots,"Sender does not match numSlots amounts");
+        allowlist[msg.sender] -= numSlots;
+        allowlist[_addresses] += numSlots;
+	}
+
+	function setWhitelist(address[] memory addresses, uint256[] memory numSlots) external onlyOwner {
+        require(addresses.length == numSlots.length,"addresses does not match numSlots length");
+		uint256  numWhitelist;
+        for (uint256 i = 0; i < numSlots.length; i++) {
+           numWhitelist += numSlots[i];
+        }
+		require(amountForWhitelist + numWhitelist <= MaxWhitelist,"Whitelist does not match numSlots");
+		amountForWhitelist += numWhitelist;
+		
+        for (uint256 i = 0; i < addresses.length; i++) {
+           allowlist[addresses[i]] += numSlots[i];
+        }
+	}
+
+	function CheckWhitelist(address addresses) public view returns (uint256) {
+        return allowlist[addresses];
+	}
+
+    //----------------↑↑↑---Whitelist---↑↑↑-------------------------
+	
+    //----------------↓↓↓---Metadata setting---↓↓↓-------------------------
+
     string private URISubfile = ".json";
-	string private _ImageLink;
+	string private _CustomImageLink;
     uint256 private _ImageID;
     bool private BXIsActive = true;
+	bool private CustomBX = false;
+	
+    function setBlindboxALL(bool _isBX, uint256 _sImageID, bool _isCBX, string memory _sCustomImage) external onlyOwner {
+		BXIsActive = _isBX;
+		_ImageID = _sImageID;
+		CustomBX = _isCBX;
+		_CustomImageLink = _sCustomImage;
+    }
 	
     function setBlindbox(bool _isBX) external onlyOwner {
 		BXIsActive = _isBX;
-    }
-	
-    function setImageLink(string memory _sImageLink) external onlyOwner {
-		_ImageLink = _sImageLink;
     }
 	
     function setImageID(uint256 _sImageID) external onlyOwner {
@@ -931,17 +1033,26 @@ contract MMNERC721 is Context, ERC721{
 
     function setBaseURI(string calldata baseURI) external onlyOwner {
         _setBaseURI(baseURI);
+		BXIsActive = false;
     }
 
-    function isBlindboxOn() internal view virtual returns (bool) {
+    function isBlindboxOn() public view virtual returns (bool) {
         return BXIsActive;
     }
-	
-    function ImageLink() internal view virtual returns (string memory) {
-        return _ImageLink;
+
+    function isCustomBX() public view virtual returns (bool) {
+        return CustomBX;
     }
 	
-    function ImageID() internal view virtual returns (uint256) {
+    function ImageLink() public view virtual returns (string memory) {
+        return iMMN(MMN()).BXImageLink();
+    }
+
+    function CustomImageLink() public view virtual returns (string memory) {
+        return _CustomImageLink;
+    }
+	
+    function ImageID() public view virtual returns (uint256) {
         return _ImageID;
     }
 
@@ -949,7 +1060,11 @@ contract MMNERC721 is Context, ERC721{
 		require(_exists(tokenId), "ERC721Metadata: URI query for nonexistent token");
 		
 		if(isBlindboxOn()){
-            return getBXMetadata(tokenId);
+            if(isCustomBX()){
+				return getCustomBXMetadata(tokenId);
+            }else{
+				return getBXMetadata(tokenId);
+            }
 		} else {
             string memory _tokenIdSTR = uint2str(tokenId);
             string memory preURI = strConcat(baseURI(), _tokenIdSTR);
@@ -957,10 +1072,8 @@ contract MMNERC721 is Context, ERC721{
 		}
     }
 
-    function getBXMetadata(uint _TokenID) public view returns(string memory){
-        string memory _TokenIDSTR = uint2str(_TokenID);
-        string memory _ImageIDSTR = uint2str(_ImageID);
-		
+    function getCustomBXMetadata(uint _TokenID) public view returns(string memory){
+        string memory _TokenIDSTR = uint2str(_TokenID); 
         return string(
           abi.encodePacked(
             abi.encodePacked(
@@ -971,7 +1084,27 @@ contract MMNERC721 is Context, ERC721{
             ),
             abi.encodePacked(
 			  bytes('","image":"'),
-              _ImageLink,
+              CustomImageLink(),
+			  bytes('"}')
+            )
+          )
+        );
+    }
+
+    function getBXMetadata(uint _TokenID) public view returns(string memory){
+        string memory _TokenIDSTR = uint2str(_TokenID);
+        string memory _ImageIDSTR = uint2str(_ImageID);
+        return string(
+          abi.encodePacked(
+            abi.encodePacked(
+			  bytes('data:application/json;utf8,{"name":"'),
+              name(),
+			  bytes(' Blindbox#'),
+              _TokenIDSTR
+            ),
+            abi.encodePacked(
+			  bytes('","image":"'),
+              ImageLink(),
               _ImageIDSTR,
 			  bytes('.png"}')
             )
@@ -1016,431 +1149,5 @@ contract MMNERC721 is Context, ERC721{
         }
         return string(ret);
 	}
-}
-
-
-interface iMMN{
-    function transferOwnership(address newOwner) external;
-	function renounceOwnership() external;
-	function balanceOf(address owner) external view returns (uint256 balance);
-}
-
-contract MyMasterNFTERC721 {
-    using Address for address;
-	
-    address public MMNOwner;
-    address public MMNExecutor;
-    uint256 public MMNSupply;
-	uint256 public ReferrerID;
-    uint256 public MMNPrice = 1 ether;
-    uint256 public MMNPFPRate = 20;
-    uint256 public ReferrerRate = 20;
-    uint256 public ReturnRate = 10;
-	uint256 public MMNPFPindex;
-	uint256 public Partnerindex;
-	
-    bool public MMNIsActive = true;
-	
-    constructor() public{
-        MMNOwner = msg.sender;
-		MMNExecutor = msg.sender;
-    }
-	
-    struct MMNERC721data {
-        address NFTAddr;
-        address NFTOwner;
-        uint CreatTime;
-        uint MaxNftSupply;
-    }
-	
-    mapping(uint256 => MMNERC721data) public MMNData;
-	
-    mapping(address => uint256) public MMNNFTAmonts;
-	
-    mapping(address => mapping (uint256 => uint256)) public MMNSortID;
-
-    mapping(address => mapping (uint256 => address)) public MMNNFTAddr;
-
-    mapping(address => uint256) public MMNPass;
-
-    mapping(uint256 => uint256) public ReferrerCode;
-	
-    mapping(uint256 => address) public ReferrerAddr;
-	
-    mapping(uint256 => address) public PartnerAddr;
-	
-    mapping(uint256 => address) public MMNPFPAddr;
-
-    event NFTCreatorResult(address indexed _XContract);
-
-    function owner() public view virtual returns (address) {
-        return MMNOwner;
-    }
-	
-    modifier onlyOwner() {
-        require(owner() == msg.sender, "Ownable: caller is not the owner");
-        _;
-    }
-
-    modifier onlyExecutor() {
-        require(MMNExecutor == msg.sender || owner() == msg.sender, "Ownable: caller is not the executor");
-        _;
-    }
-
-    function withdraw() external onlyOwner {
-		(bool success, ) = owner().call{value: address(this).balance}("");
-		require(success, "Transfer failed.");
-    }
-
-    function setMMNPrice(uint _MMNPrice) external onlyOwner {
-        MMNPrice = _MMNPrice;
-    }
-	
-    function sMMNPrice() public view returns (uint256) {
-        return MMNPrice;
-    }
-
-    function setReferrerRate(uint _Rate) external onlyOwner {
-        require((_Rate + MMNPFPRate + ReturnRate) <= 80, "MMN: Referrer rate error.");
-        ReferrerRate = _Rate;
-    }
-	
-    function sReferrerRate() public view returns (uint256) {
-        return ReferrerRate;
-    }
-
-    function setMMNPFPRate(uint _Rate) external onlyOwner {
-        require((_Rate + ReferrerRate + ReturnRate) <= 80, "MMN: Referrer rate error.");
-        MMNPFPRate = _Rate;
-    }
-
-    function sMMNPFPRate() public view returns (uint256) {
-        return MMNPFPRate;
-    }
-
-    function setReturnRate(uint _Rate) external onlyOwner {
-        require((_Rate + MMNPFPRate + ReferrerRate) <= 80, "MMN: Referrer rate error.");
-        ReturnRate = _Rate;
-    }
-
-    function sReturnRate() public view returns (uint256) {
-        return ReturnRate;
-    }
-
-    function IsMMNActive() public view returns (bool) {
-        return MMNIsActive;
-    }
-
-    function SetMMNActive() external onlyOwner {
-        MMNIsActive = !MMNIsActive;
-    }
-
-    function MMNtotalSupply() public view returns (uint256) {
-        return MMNSupply;
-    }
-	
-    function transferMMNOwner(uint _NFTID, address newOwner) external {
-        require(msg.sender == MMNData[_NFTID].NFTOwner, "Ownable: sender is not owner.");
-
-		iMMN(MMNData[_NFTID].NFTAddr).transferOwnership(newOwner);
-		removeNFTAddr(CheckNFTIDSort(_NFTID, msg.sender), msg.sender);
-		MMNData[_NFTID].NFTOwner = newOwner;
-
-		MMNSortID[newOwner][MMNNFTAmonts[newOwner]] = _NFTID;
-		MMNNFTAddr[newOwner][MMNNFTAmonts[newOwner]] = MMNData[_NFTID].NFTAddr;
-		MMNNFTAmonts[msg.sender] -= 1;
-		MMNNFTAmonts[newOwner] += 1;
-    }
-	
-    function renounceMMNOwnership(uint _NFTID) external {
-        require(msg.sender == MMNData[_NFTID].NFTOwner, "Ownable: sender is not owner.");
-
-		iMMN(MMNData[_NFTID].NFTAddr).renounceOwnership();
-		removeNFTAddr(CheckNFTIDSort(_NFTID, msg.sender), msg.sender);
-		MMNData[_NFTID].NFTOwner = address(0);
-
-		MMNSortID[address(0)][MMNNFTAmonts[address(0)]] = _NFTID;
-		MMNNFTAddr[address(0)][MMNNFTAmonts[address(0)]] = MMNData[_NFTID].NFTAddr;
-		MMNNFTAmonts[msg.sender] -= 1;
-		MMNNFTAmonts[address(0)] += 1;
-    }
-
-    function IsMMNPFPAddr(address _PFPAddr) public view returns (bool) {
-		bool isPFP = false;
-	    for (uint i = 0; i < MMNPFPindex; i++) {
-            if(MMNPFPAddr[i] == _PFPAddr){
-				isPFP = true;
-				return isPFP;
-            }
-        }
-        return isPFP;
-    }
-	
-    function sMMNPFPAddr(uint _index) public view returns (address) {
-        require(_index < MMNPFPindex, "MMN: MMNPFP index error.");
-        return MMNPFPAddr[_index];
-    }
-
-    function setMMNPFPAddr(uint _index, address _PFPAddr) external onlyOwner {
-        require(_index < MMNPFPindex, "MMN: MMNPFP index error.");
-        MMNPFPAddr[_index] = _PFPAddr;
-    }
-
-    function pushMMNPFPAddr(address _PFPAddr) external onlyOwner {
-        MMNPFPAddr[MMNPFPindex] = _PFPAddr;
-		MMNPFPindex += 1;
-    }
-
-    function setMMNPass(address _addr, uint _amounts) external onlyExecutor {
-        MMNPass[_addr] = _amounts;
-    }
-	
-    function IsMMNPFPOwner(address _URIAddr) public view returns (bool) {
-		bool isPFPOwner = false;
-	    for (uint i = 0; i < MMNPFPindex; i++) {
-            if(iMMN(MMNPFPAddr[i]).balanceOf(_URIAddr) > 0){
-				isPFPOwner = true;
-				return isPFPOwner;
-            }
-        }
-        return isPFPOwner;
-    }
-
-    function IsMMNPass(address _URIAddr) public view returns (bool) {
-        return MMNPass[_URIAddr] > 0;
-    }
-
-    function IsNFTOwner(address _Addr) public view returns (bool) {
-        return MMNNFTAmonts[_Addr] > 0;
-    }
-
-    function CheckNFTAmounts(address _Addr) public view returns (uint256) {
-        return MMNNFTAmonts[_Addr];
-    }
-
-    function CheckNFTIDSort(uint _NFTID, address _Addr) public view returns (uint256) {
-        require(_Addr == MMNData[_NFTID].NFTOwner, "Ownable: sender is not owner.");
-        uint IDSort = 1000000;
-        for(uint i = 0; i < CheckNFTAmounts(_Addr); i++) {
-            if (_NFTID == MMNSortID[_Addr][i]) {
-                IDSort = i;
-                return IDSort;
-            }
-        }
-        return IDSort;
-    }
-	
-    function removeNFTAddr(uint index, address _Addr) internal returns (bool) {
-        uint _NFTLength = CheckNFTAmounts(_Addr);
-        require(index < _NFTLength, "Gaia : Length error.");
-        for (uint i = index; i< _NFTLength - 1; i++){
-            MMNSortID[_Addr][i] = MMNSortID[_Addr][i+1];
-            MMNNFTAddr[_Addr][i] = MMNNFTAddr[_Addr][i+1];
-        }
-        return true;
-    }
-
-    function refundIfOver(uint256 price) private {
-        if (msg.value > price) {
-            (bool success, ) = (msg.sender).call{value: (msg.value - price)}("");
-            require(success, "Transfer failed.");
-        }
-    }
-
-    //----------------↓↓↓---Referrer---↓↓↓-------------------------
-	
-	function setReferrerCode(uint _ReferrerCode, address _addr) external onlyExecutor {
-        require(!isReferrerCode(_ReferrerCode), "MMN: Referrer code already exist.");
-        ReferrerCode[ReferrerID] = _ReferrerCode;
-        ReferrerAddr[ReferrerID] = _addr;
-        ReferrerID += 1;
-    }
-	
-	function modifyReferrerCode(uint _index, uint _ReferrerCode, address _addr) external onlyExecutor {
-        require(!isReferrerCode(_ReferrerCode), "MMN: Referrer code already exist.");
-        ReferrerCode[_index] = _ReferrerCode;
-        ReferrerAddr[_index] = _addr;
-    }
-
-    function isReferrerCode(uint _ReferrerCode) public view returns (bool) {
-		bool isCode = false;
-	    for (uint i = 0; i < ReferrerID; i++) {
-            if(ReferrerCode[i] == _ReferrerCode){
-				isCode = true;
-				return isCode;
-            }
-        }
-        return isCode;
-    }
-	
-    function isReferrerAddr(address _Addr) public view returns (bool) {
-		bool isAddr = false;
-	    for (uint i = 0; i < ReferrerID; i++) {
-            if(ReferrerAddr[i] == _Addr){
-				isAddr = true;
-				return isAddr;
-            }
-        }
-        return isAddr;
-    }
-	
-    function getReferrerSort(uint _ReferrerCode) public view returns (uint256) {
-	    require(isReferrerCode(_ReferrerCode), "MMN: Referrer code does not exist.");
-		uint ReferrerSort = 1000000;
-	
-	    for (uint i = 0; i < ReferrerID; i++) {
-            if(ReferrerCode[i] == _ReferrerCode){
-				ReferrerSort = i;
-				return ReferrerSort;
-            }
-        }
-        return ReferrerSort;
-    }
-	
-    function getReferrer(uint _ReferrerCode) public view returns (address) {
-	    require(isReferrerCode(_ReferrerCode), "MMN: Referrer Code does not exist.");
-		uint ReferrerSort = getReferrerSort(_ReferrerCode);
-        return ReferrerAddr[ReferrerSort];
-    }
-
-    function getReferrerCode(address _Addr) public view returns (uint256) {
-	    require(isReferrerAddr(_Addr), "MMN: Referrer Code does not exist.");
-		uint _ReferrerCode = 0;
-	    for (uint i = 0; i < ReferrerID; i++) {
-            if(ReferrerAddr[i] == _Addr){
-                _ReferrerCode = ReferrerCode[i];
-				return _ReferrerCode;
-            }
-        }
-        return _ReferrerCode;
-    }
-
-    function getReferrerAddr(uint index) public view returns (uint256 _ReferrerCode, address _Addr) {
-	    require(index < ReferrerID, "MMN: Referrer index does not exist.");
-        return (ReferrerCode[index], ReferrerAddr[index]);
-    }
-	
-    function IsPartnerAddr(address _PartnerAddr) public view returns (bool) {
-		bool isPartner = false;
-	    for (uint i = 0; i < Partnerindex; i++) {
-            if(PartnerAddr[i] == _PartnerAddr){
-				isPartner = true;
-				return isPartner;
-            }
-        }
-        return isPartner;
-    }
-	
-    function sPartnerAddr(uint _index) public view returns (address) {
-        require(_index < Partnerindex, "MMN: Partner index error.");
-        return PartnerAddr[_index];
-    }
-
-    function setPartnerAddr(uint _index, address _PartnerAddr) external onlyOwner {
-        require(_index < Partnerindex, "MMN: Partner index error.");
-		require(!IsPartnerAddr(_PartnerAddr), "MMN: Already a partner.");
-        PartnerAddr[_index] = _PartnerAddr;
-    }
-
-    function pushPartnerAddr(address _PartnerAddr) external onlyOwner {
-		require(!IsPartnerAddr(_PartnerAddr), "MMN: Already a partner.");
-        PartnerAddr[Partnerindex] = _PartnerAddr;
-		Partnerindex += 1;
-    }
-	
-    //----------------↑↑↑---Referrer---↑↑↑-------------------------
-
-    function MMNCreateERC721(
-        uint8 tokenType,
-        string memory name, 
-        string memory symbol, 
-        uint256 maxNftSupply, 
-        uint256 saleStart, 
-        uint256 saleEnd, 
-        uint256 _MaxPurchase,
-		uint256 _ReferrerCode
-	)
-       external payable returns (bool)
-    {
-        require(IsMMNActive(), "MMN must be active to deploy NFT contract.");
-        address _Sender = msg.sender;
-        require(MMNNFTAmonts[_Sender] < 20, "MMN: Create too many NFT contracts.");
-        require(saleEnd >= saleStart, "MMN: Mint time error.");
-		address _RAddr = address(this);
-		uint256 totalCost = MMNPrice;
-		
-        if (tokenType == 0) {
-            require(IsMMNPass(_Sender), "MMNPass: MMNPass error T0.");
-        } else {
-            require(MMNPrice <= msg.value, "MMN price is not correct");
-			uint _sTotalRate = 0;
-			if(isReferrerCode(_ReferrerCode)) {
-				_sTotalRate += ReturnRate;
-				_RAddr = getReferrer(_ReferrerCode);
-			}
-			if(IsMMNPFPOwner(_Sender)) {
-				_sTotalRate += MMNPFPRate;
-			}
-			totalCost = MMNPrice * (100 - _sTotalRate) / 100;
-        }
-
-		uint _mintStart = saleStart;
-		uint _mintEnd = saleEnd;
-        if (saleStart == 0) {
-            _mintStart = block.timestamp;
-        }
-		
-        if (saleEnd == 0) {
-            _mintEnd = block.timestamp + 3153600000;
-        }
-
-        address _NFTAddress = address(createMMNERC721(name, symbol, maxNftSupply, _mintStart, _mintEnd, MMNSupply, _MaxPurchase, msg.sender));
-        emit NFTCreatorResult(_NFTAddress);
-
-		MMNData[MMNSupply].NFTAddr = _NFTAddress;
-		MMNData[MMNSupply].NFTOwner = _Sender;
-		MMNData[MMNSupply].CreatTime = block.timestamp;
-		MMNData[MMNSupply].MaxNftSupply = maxNftSupply;
-
-        if (tokenType == 0) {
-            MMNPass[_Sender] -= 1;
-        }
-
-		MMNSortID[_Sender][MMNNFTAmonts[_Sender]] = MMNSupply;
-		MMNNFTAddr[_Sender][MMNNFTAmonts[_Sender]] = _NFTAddress;
-		MMNNFTAmonts[_Sender] += 1;
-		MMNSupply += 1;
-		
-        if (tokenType != 0) {
-            refundIfOver(totalCost);
-			uint256 _payout = MMNPrice * ReferrerRate / 100;
-			if(IsPartnerAddr(_RAddr)) {
-				uint256 PartnerRate = ReferrerRate * 2;
-				if(PartnerRate > (100 - ReturnRate - MMNPFPRate)) {
-					PartnerRate = (100 - ReturnRate - MMNPFPRate);
-				}
-				_payout = MMNPrice * PartnerRate / 100;
-			}
-			
-            (bool success, ) = (_RAddr).call{value: _payout}("");
-            require(success, "Transfer failed.");
-        }
-        return true;
-    }
-
-    function createMMNERC721(
-        string memory name, 
-        string memory symbol, 
-        uint256 maxNftSupply, 
-        uint256 saleStart, 
-        uint256 saleEnd, 
-        uint256 _NFTID, 
-        uint _MaxPurchase, 
-        address _sOwnerAddr
-	)
-       private
-       returns (MMNERC721 NFTAddress)
-    {
-        return new MMNERC721(name, symbol, maxNftSupply, saleStart, saleEnd, _NFTID, _MaxPurchase, _sOwnerAddr);
-    }
+    //----------------↑↑↑---Metadata setting---↑↑↑-------------------------
 }
