@@ -9,7 +9,6 @@ MasterNFT.io is a very simple and convenient NFT generation tool. It not only he
 To access the MasterNFT, use an download link from the
 [latest release](https://masternft.io/app/MyMasterNFT.rar), 
 or visit [masternft.io](https://masternft.io/).
-
 ![MasterNFT](https://masternft.io/images/work_img.jpg)
 
 
@@ -21,7 +20,11 @@ Free to use Art generator.
 Free to use NFT layer art generator, with metadata files in json format required for generation, easy to use, only 3 minutes to set up to generate thousands of NFT art pictures, metadata files will also be adjusted according to the traits and probability settings .
 ![Layer Maker](https://masternft.io/images/LayerMaker_img.jpg)
 
-
+- 1.Imported layer images must have the same resolution.
+- 2.All imported layer images must be png files.
+- 3.All imported layer images must have a transparent background.
+- 4.If you use IPFS to store files. You have to save the generated image to IPFS first, then copy the CID address and paste it in the "IPFS image URL" input field, and click "Replace".
+- 5.The default resolution is 800X800, you can select 4 output resolutions on the left buttons : 600X600 / 800X800 / 1080X1080 / 1280X1280
 
 
 ## NFT Contractor
