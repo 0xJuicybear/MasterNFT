@@ -9,6 +9,7 @@ MasterNFT.io is a very simple and convenient NFT generation tool. It not only he
 To access the MasterNFT, use an download link from the
 [latest release](https://masternft.io/app/MyMasterNFT.rar), 
 or visit [masternft.io](https://masternft.io/).
+
 ![MasterNFT](https://masternft.io/images/work_img.jpg)
 
 
