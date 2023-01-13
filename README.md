@@ -25,8 +25,10 @@ Free to use NFT layer art generator, with metadata files in json format required
 - 3.All imported layer images must have a transparent background.
 - 4.The image on the bottom layer must be a full-page background.
 - 5.The file name of the imported image file will become the trait name in the metadata.
-- 6.If you use IPFS to store files. You have to save the generated image to IPFS first, then copy the CID address and paste it in the "IPFS image URL" input field, and click "Replace".
-- 7.The default resolution is 800X800, you can select 4 output resolutions on the left buttons : 600X600 / 800X800 / 1080X1080 / 1280X1280
+- 6.Layer image files is placed in the "LayerFrom" folder, click "Trait Foloder" button to get the folder, "01" is the top layer, and "09" is the bottom layer.
+- 7.If the layer is less than 9 layers, just cancel the Checkbox in front of the Trait layer, and make sure there is a "none.png" transparent image file stored in the layer.
+- 8.If you use IPFS to store files. You have to save the generated image to IPFS first, then copy the CID address and paste it in the "IPFS image URL" input field, and click "Replace".
+- 9.The default resolution is 800X800, you can select 4 output resolutions on the left buttons : 600X600 / 800X800 / 1080X1080 / 1280X1280
 
 
 ## NFT Contractor
